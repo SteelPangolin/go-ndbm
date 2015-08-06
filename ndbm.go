@@ -83,15 +83,9 @@ func (ndbm *NDBM) Close() {
 }
 
 // FD returns a file descriptor that can be used to lock the database.
+// Not part of the POSIX standard but implemented in FreeBSD, Mac OS X, and GDBM.
 func (ndbm *NDBM) FD() int {
 	return int(C.dbm_dirfno(ndbm.cDbm))
-}
-
-func bytesToDatum(buf []byte) C.datum {
-	return C.datum{
-		dptr:  (*C.char)(unsafe.Pointer(&buf[0])),
-		dsize: C.int(len(buf)),
-	}
 }
 
 func datumToBytes(datum C.datum) []byte {

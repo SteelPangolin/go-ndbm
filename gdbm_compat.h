@@ -5,6 +5,8 @@
 // won't need this. However, Ubuntu 12 through 15 (current)
 // and Debian 7 and 8 (current) all use gdbm 1.8.
 
+#pragma once
+
 #include <sys/types.h>
 #include <gdbm.h>
 
@@ -25,16 +27,6 @@ int dbm_store(DBM* db, datum key, datum content, int store_mode);
 int dbm_dirfno(DBM* db);
 void dbm_clearerr(DBM* db);
 int dbm_error(DBM* DB);
-
-// Emulate missing error functions.
-
-void dbm_clearerr(DBM* db) {
-	gdbm_errno = 0;
-}
-
-int dbm_error(DBM* db) {
-	return gdbm_errno; 
-}
 
 // gdbm dbm_delete doesn't return 1 if the item is missing like BSD ndbm.
 // Instead, we need to check the error code.
