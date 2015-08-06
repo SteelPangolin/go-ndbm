@@ -144,11 +144,11 @@ func TestNDBM(t *testing.T) {
 			actualItem := actual[i]
 			if bytes.Compare(expectedItem.Key, actualItem.Key) != 0 {
 				t.Errorf("Expected and actual items %d have different keys: %s vs. %s",
-					expectedItem.Key, actualItem.Key)
+					i, expectedItem.Key, actualItem.Key)
 			}
 			if bytes.Compare(expectedItem.Value, actualItem.Value) != 0 {
 				t.Errorf("Expected and actual items %d have different values: %s vs. %s",
-					expectedItem.Value, actualItem.Value)
+					i, expectedItem.Value, actualItem.Value)
 			}
 		}
 	}
