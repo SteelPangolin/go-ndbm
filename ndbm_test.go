@@ -9,29 +9,44 @@ import (
 	"testing"
 )
 
+// items is a sortable list of database entries.
+type items []Item
+
+func (items items) Len() int {
+	return len(items)
+}
+
+func (items items) Swap(i, j int) {
+	items[i], items[j] = items[j], items[i]
+}
+
+func (items items) Less(i, j int) bool {
+	return bytes.Compare(items[i].Key, items[j].Key) == -1
+}
+
 func TestNDBM(t *testing.T) {
-	// create a temp dir for test files
+	// Create a temp dir for test files.
 	tempdir, err := ioutil.TempDir("", "TestNDBM")
 	if err != nil {
 		t.Fatalf("Couldn't create tempdir for test DB: %v", err)
 	}
 	defer os.RemoveAll(tempdir)
 
-	// create a new DB in that temp dir
+	// Create a new DB in that temp dir.
 	ndbm, err := OpenWithDefaults(filepath.Join(tempdir, "test"))
 	if err != nil {
 		t.Fatalf("Couldn't open DB: %v", err)
 	}
 	defer ndbm.Close()
 
-	// check the empty database
+	// Check the empty database.
 	if ndbm.Len() != 0 {
 		t.Error("Empty DB should have no keys")
 	}
 
-	// insert some data
+	// Insert some data.
 	{
-		items := Items{
+		items := items{
 			Item{[]byte("a"), []byte("alphabet")},
 			Item{[]byte("b"), []byte("battlement")},
 			Item{[]byte("c"), []byte("carnival")},
@@ -46,7 +61,7 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// try to fetch a key that doesn't exist, which should fail
+	// Try to fetch a key that doesn't exist, which should fail.
 	{
 		value, err := ndbm.Fetch([]byte("x"))
 		if value != nil || err == nil {
@@ -59,7 +74,7 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// try to insert a key that already exists, which should fail
+	// Try to insert a key that already exists, which should fail.
 	{
 		err := ndbm.Insert([]byte("c"), []byte("contentment"))
 		if err == nil {
@@ -75,7 +90,7 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// replace a key that already exists
+	// Replace a key that already exists.
 	{
 		err := ndbm.Replace([]byte("c"), []byte("contentment"))
 		if err != nil {
@@ -86,7 +101,7 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// delete a key
+	// Delete a key.
 	{
 		err := ndbm.Delete([]byte("b"))
 		if err != nil {
@@ -97,7 +112,7 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// delete a key that has already been deleted, which should fail
+	// Delete a key that has already been deleted, which should fail.
 	{
 		err := ndbm.Delete([]byte("b"))
 		if err == nil {
@@ -113,7 +128,7 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// delete a key that has never existed, which should fail
+	// Delete a key that has never existed, which should fail.
 	{
 		err := ndbm.Delete([]byte("x"))
 		if err == nil {
@@ -126,14 +141,14 @@ func TestNDBM(t *testing.T) {
 		}
 	}
 
-	// get all contents, see if it's what we expected
+	// Get all contents, and see if it's what we expected.
 	{
-		expected := Items{
+		expected := items{
 			Item{[]byte("a"), []byte("alphabet")},
 			Item{[]byte("c"), []byte("contentment")},
 			Item{[]byte("d"), []byte("dinosaur")},
 		}
-		actual := ndbm.Items()
+		actual := items(ndbm.Items())
 		if len(expected) != len(actual) {
 			t.Fatalf(
 				"Expected and actual DB contents have different lengths: %d vs. %d",

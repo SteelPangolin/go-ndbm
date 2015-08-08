@@ -14,17 +14,18 @@ package ndbm
 import "C"
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"syscall"
 	"unsafe"
 )
 
+// NDBM or compatible database pointer.
 type NDBM struct {
 	cDbm *C.DBM
 }
 
+// KeyAlreadyExists is returned when trying to insert a key that already exists.
 type KeyAlreadyExists struct {
 	Key []byte
 }
@@ -33,6 +34,7 @@ func (err KeyAlreadyExists) Error() string {
 	return fmt.Sprintf("Key already exists: %s", err.Key)
 }
 
+// KeyNotFound is returned when trying to fetch or delete a key that doesn't exist.
 type KeyNotFound struct {
 	Key []byte
 }
@@ -41,22 +43,25 @@ func (err KeyNotFound) Error() string {
 	return fmt.Sprintf("Key not found: %s", err.Key)
 }
 
-type NDBMError struct {
+// Error is returned on unexpected NDBM or libc errors.
+type Error struct {
 	dbErrNum int
 	errnoErr error
 }
 
-func (err NDBMError) Error() string {
+func (err Error) Error() string {
 	return fmt.Sprintf("NDBM error #%d (system error %v)", err.dbErrNum, err.errnoErr)
 }
 
 const (
-	ndbm_CHECK_ERROR    = -1
-	ndbm_NO_ERROR       = 0
-	ndbm_ALREADY_EXISTS = 1
-	ndbm_NOT_FOUND      = 1
+	checkError    = -1
+	noError       = 0
+	alreadyExists = 1
+	notFound      = 1
 )
 
+// OpenWithDefaults opens an NDBM database in read-write mode with permissions ug=rw,o=
+// and will create it if it doesn't exist.
 func OpenWithDefaults(path string) (*NDBM, error) {
 	ndbm, err := Open(
 		path,
@@ -65,6 +70,7 @@ func OpenWithDefaults(path string) (*NDBM, error) {
 	return ndbm, err
 }
 
+// Open lets you specify how the database is opened, for example, if you want read-only mode.
 func Open(path string, flags, mode int) (*NDBM, error) {
 	cPath := C.CString(path)
 	cDbm, err := C.dbm_open(cPath, C.int(flags), C.mode_t(mode))
@@ -78,6 +84,7 @@ func Open(path string, flags, mode int) (*NDBM, error) {
 	return ndbm, nil
 }
 
+// Close closes the NDBM database.
 func (ndbm *NDBM) Close() {
 	C.dbm_close(ndbm.cDbm)
 }
@@ -98,8 +105,8 @@ func datumToBytes(datum C.datum) []byte {
 func (ndbm *NDBM) store(key, value []byte, mode C.int) (C.int, error) {
 	C.dbm_clearerr(ndbm.cDbm)
 	status, err := C.dbm_store(ndbm.cDbm, bytesToDatum(key), bytesToDatum(value), mode)
-	if status == ndbm_CHECK_ERROR {
-		return status, NDBMError{
+	if status == checkError {
+		return status, Error{
 			dbErrNum: int(C.dbm_error(ndbm.cDbm)),
 			errnoErr: err,
 		}
@@ -107,35 +114,40 @@ func (ndbm *NDBM) store(key, value []byte, mode C.int) (C.int, error) {
 	return status, nil
 }
 
+// Insert inserts a new entry into the database.
+// Returns KeyAlreadyExists if the key already exists.
 func (ndbm *NDBM) Insert(key, value []byte) error {
 	status, err := ndbm.store(key, value, C.DBM_INSERT)
 	if err != nil {
 		return err
 	}
-	if status == ndbm_ALREADY_EXISTS {
+	if status == alreadyExists {
 		return KeyAlreadyExists{key}
 	}
 	return nil
 }
 
+// Replace inserts a new entry or overwrites an existing entry.
 func (ndbm *NDBM) Replace(key, value []byte) error {
 	_, err := ndbm.store(key, value, C.DBM_REPLACE)
 	return err
 }
 
+// Fetch retrieves an entry value by key.
+// Returns KeyNotFound if the key can't be found.
 func (ndbm *NDBM) Fetch(key []byte) ([]byte, error) {
 	C.dbm_clearerr(ndbm.cDbm)
 	datum, err := C.dbm_fetch(ndbm.cDbm, bytesToDatum(key))
 	value := datumToBytes(datum)
 	if value == nil {
 		dbErrNum := C.dbm_error(ndbm.cDbm)
-		if dbErrNum == ndbm_NO_ERROR {
+		if dbErrNum == noError {
 			return nil, KeyNotFound{key}
 		}
 		if dbErrNum == C.DBM_ITEM_NOT_FOUND {
 			return nil, KeyNotFound{key}
 		}
-		return nil, NDBMError{
+		return nil, Error{
 			dbErrNum: int(dbErrNum),
 			errnoErr: err,
 		}
@@ -143,36 +155,38 @@ func (ndbm *NDBM) Fetch(key []byte) ([]byte, error) {
 	return value, nil
 }
 
+// Delete deletes an entry from the database.
+// Returns KeyNotFound if the key can't be found.
 func (ndbm *NDBM) Delete(key []byte) error {
 	C.dbm_clearerr(ndbm.cDbm)
 	status, err := C.dbm_delete(ndbm.cDbm, bytesToDatum(key))
-	if status == ndbm_CHECK_ERROR {
+	if status == checkError {
 		dbErrNum := C.dbm_error(ndbm.cDbm)
 		if dbErrNum == C.DBM_ITEM_NOT_FOUND {
 			return KeyNotFound{key}
 		}
-		return NDBMError{
+		return Error{
 			dbErrNum: int(dbErrNum),
 			errnoErr: err,
 		}
 	}
-	if status == ndbm_NOT_FOUND {
+	if status == notFound {
 		return KeyNotFound{key}
 	}
 	return nil
 }
 
-var noMoreKeys error = fmt.Errorf("No more keys")
+var errNoMoreKeys = fmt.Errorf("No more keys")
 
 func (ndbm *NDBM) firstKey() ([]byte, error) {
 	datum, err := C.dbm_firstkey(ndbm.cDbm)
 	key := datumToBytes(datum)
 	if key == nil {
 		dbErrNum := C.dbm_error(ndbm.cDbm)
-		if dbErrNum == ndbm_NO_ERROR {
-			return nil, noMoreKeys
+		if dbErrNum == noError {
+			return nil, errNoMoreKeys
 		}
-		return nil, NDBMError{
+		return nil, Error{
 			dbErrNum: int(dbErrNum),
 			errnoErr: err,
 		}
@@ -185,10 +199,10 @@ func (ndbm *NDBM) nextKey() ([]byte, error) {
 	key := datumToBytes(datum)
 	if key == nil {
 		dbErrNum := C.dbm_error(ndbm.cDbm)
-		if dbErrNum == ndbm_NO_ERROR {
-			return nil, noMoreKeys
+		if dbErrNum == noError {
+			return nil, errNoMoreKeys
 		}
-		return nil, NDBMError{
+		return nil, Error{
 			dbErrNum: int(dbErrNum),
 			errnoErr: err,
 		}
@@ -196,10 +210,12 @@ func (ndbm *NDBM) nextKey() ([]byte, error) {
 	return key, nil
 }
 
+// KeysCallback executes a callback function for every key in the database.
+// The callback should take a key and return an error if there is a problem.
 func (ndbm *NDBM) KeysCallback(callback func([]byte) error) error {
 	for key, err := ndbm.firstKey(); err == nil; key, err = ndbm.nextKey() {
 		if err != nil {
-			if err == noMoreKeys {
+			if err == errNoMoreKeys {
 				return nil
 			}
 			return err
@@ -212,6 +228,7 @@ func (ndbm *NDBM) KeysCallback(callback func([]byte) error) error {
 	return nil
 }
 
+// Keys lists every key in the database.
 func (ndbm *NDBM) Keys() [][]byte {
 	keys := [][]byte{}
 	_ = ndbm.KeysCallback(func(key []byte) error {
@@ -221,6 +238,7 @@ func (ndbm *NDBM) Keys() [][]byte {
 	return keys
 }
 
+// Len returns the number of entries in the database.
 func (ndbm *NDBM) Len() int {
 	count := 0
 	_ = ndbm.KeysCallback(func(_ []byte) error {
@@ -230,6 +248,8 @@ func (ndbm *NDBM) Len() int {
 	return count
 }
 
+// ValuesCallback executes a callback function for every value in the database.
+// The callback should take a value and return an error if there is a problem.
 func (ndbm *NDBM) ValuesCallback(callback func([]byte) error) error {
 	return ndbm.KeysCallback(func(key []byte) error {
 		value, err := ndbm.Fetch(key)
@@ -240,6 +260,7 @@ func (ndbm *NDBM) ValuesCallback(callback func([]byte) error) error {
 	})
 }
 
+// Values returns every value in the database.
 func (ndbm *NDBM) Values() [][]byte {
 	values := [][]byte{}
 	_ = ndbm.ValuesCallback(func(value []byte) error {
@@ -249,6 +270,8 @@ func (ndbm *NDBM) Values() [][]byte {
 	return values
 }
 
+// ItemsCallback executes a callback function for every entry in the database.
+// The callback should take a key and value and return an error if there is a problem.
 func (ndbm *NDBM) ItemsCallback(callback func(key, value []byte) error) error {
 	return ndbm.KeysCallback(func(key []byte) error {
 		value, err := ndbm.Fetch(key)
@@ -259,27 +282,15 @@ func (ndbm *NDBM) ItemsCallback(callback func(key, value []byte) error) error {
 	})
 }
 
+// Item is a database entry.
 type Item struct {
 	Key   []byte
 	Value []byte
 }
 
-type Items []Item
-
-func (items Items) Len() int {
-	return len(items)
-}
-
-func (items Items) Swap(i, j int) {
-	items[i], items[j] = items[j], items[i]
-}
-
-func (items Items) Less(i, j int) bool {
-	return bytes.Compare(items[i].Key, items[j].Key) == -1
-}
-
-func (ndbm *NDBM) Items() Items {
-	items := Items{}
+// Items returns every entry in the database.
+func (ndbm *NDBM) Items() []Item {
+	items := []Item{}
 	_ = ndbm.ItemsCallback(func(key, value []byte) error {
 		items = append(items, Item{
 			Key:   key,
@@ -290,7 +301,8 @@ func (ndbm *NDBM) Items() Items {
 	return items
 }
 
-func (ndbm *NDBM) Update(items Items) error {
+// Update takes a list of entries and upserts them into the database.
+func (ndbm *NDBM) Update(items []Item) error {
 	for _, item := range items {
 		err := ndbm.Replace(item.Key, item.Value)
 		if err != nil {
