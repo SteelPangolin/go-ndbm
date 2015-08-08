@@ -167,4 +167,28 @@ func TestNDBM(t *testing.T) {
 			}
 		}
 	}
+
+	// Test shared locking.
+	{
+		err = ndbm.LockShared()
+		if err != nil {
+			t.Errorf("Couldn't get a shared advisory lock: %v", err)
+		}
+		err = ndbm.Unlock()
+		if err != nil {
+			t.Errorf("Couldn't unlock: %v", err)
+		}
+	}
+
+	// Test exclusive locking.
+	{
+		err = ndbm.LockExclusive()
+		if err != nil {
+			t.Errorf("Couldn't get an exclusive advisory lock: %v", err)
+		}
+		err = ndbm.Unlock()
+		if err != nil {
+			t.Errorf("Couldn't unlock: %v", err)
+		}
+	}
 }
