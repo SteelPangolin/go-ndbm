@@ -10,7 +10,7 @@ State of the art structured storage for 1986.
 NDBM is built into Mac OS X and FreeBSD,
 and is available as a compatibility mode of the GDBM library on Linux.
 
-[API documentation is available on GoDoc](https://godoc.org/github.com/SteelPangolin/go-genderize).
+[API documentation is available on GoDoc](https://godoc.org/github.com/SteelPangolin/go-ndbm).
 
 ### Why?
 
